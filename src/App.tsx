@@ -16,6 +16,9 @@ import PlaceOrder from "./pages/PlaceOrder";
 import OrderHistory from "./pages/OrderHistory";
 import AddFunds from "./pages/AddFunds";
 import Support from "./pages/Support";
+import Terms from "./pages/Terms";
+import Privacy from "./pages/Privacy";
+import Contact from "./pages/Contact";
 import NotFound from "./pages/NotFound";
 
 // Admin Pages
@@ -48,6 +51,9 @@ const App = () => (
               <Route path="/orders" element={<OrderHistory />} />
               <Route path="/funds" element={<AddFunds />} />
               <Route path="/support" element={<Support />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/contact" element={<Contact />} />
               
               {/* Admin Routes */}
               <Route path="/admin" element={<AdminDashboard />} />
