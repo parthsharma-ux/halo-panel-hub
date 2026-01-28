@@ -12,6 +12,7 @@ import {
   TrendingUp,
   ShoppingCart,
   AlertCircle,
+  Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
@@ -113,6 +114,27 @@ export default function Dashboard() {
               New Order
             </Link>
           </Button>
+        </div>
+
+        {/* Telegram Channel Banner */}
+        <div className="glass-card p-4 border-l-4 border-secondary animate-slide-in">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Send className="h-5 w-5 text-secondary flex-shrink-0" />
+              <div>
+                <h3 className="font-semibold">Join our Telegram Channel</h3>
+                <p className="text-sm text-muted-foreground">Stay updated with latest offers and announcements!</p>
+              </div>
+            </div>
+            <a 
+              href="https://t.me/EngageXsmm" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity whitespace-nowrap"
+            >
+              Join Now
+            </a>
+          </div>
         </div>
 
         {/* Announcement Banner */}

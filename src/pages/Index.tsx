@@ -12,7 +12,7 @@ export default function Index() {
             <Zap className="h-8 w-8 text-primary" />
             <div className="absolute inset-0 blur-lg bg-primary/40" />
           </div>
-          <span className="font-display font-bold text-2xl gradient-text">SMMPanel</span>
+          <span className="font-display font-bold text-2xl gradient-text">EngageXsmm</span>
         </div>
         <div className="flex items-center gap-4">
           <Button variant="ghost" asChild>
@@ -83,7 +83,7 @@ export default function Index() {
       {/* Footer */}
       <footer className="container py-8 border-t border-border">
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
-          <p>© 2024 SMMPanel. All rights reserved.</p>
+          <p>© 2024 EngageXsmm. All rights reserved.</p>
           <div className="flex gap-6">
             <Link to="/terms" className="hover:text-foreground">Terms</Link>
             <Link to="/privacy" className="hover:text-foreground">Privacy</Link>
