@@ -128,14 +128,14 @@ export default function PlaceOrder() {
 
     try {
       // Create order
-      const { error: orderError } = await supabase.from('orders').insert({
+      const { data: orderData, error: orderError } = await supabase.from('orders').insert({
         user_id: user!.id,
         service_id: selectedService,
         link,
         quantity: quantityNum,
         amount: totalAmount,
         status: 'pending',
-      });
+      }).select().single();
 
       if (orderError) throw orderError;
 
@@ -149,6 +149,23 @@ export default function PlaceOrder() {
       if (balanceError) throw balanceError;
 
       await refreshProfile();
+
+      // Auto-forward order to external API if service has API integration
+      try {
+        const { data: forwardResult, error: forwardError } = await supabase.functions.invoke('forward-order', {
+          body: { orderId: orderData.id }
+        });
+        
+        if (forwardError) {
+          console.error('Order forwarding error:', forwardError);
+        } else if (forwardResult?.forwarded) {
+          console.log('Order forwarded successfully:', forwardResult.externalOrderId);
+        }
+      } catch (forwardErr) {
+        console.error('Failed to forward order:', forwardErr);
+        // Don't fail the order if forwarding fails - it's already created
+      }
+
       setOrderSuccess(true);
       
       toast({

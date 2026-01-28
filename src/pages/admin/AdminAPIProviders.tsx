@@ -75,6 +75,7 @@ export default function AdminAPIProviders() {
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [priceMarkup, setPriceMarkup] = useState<number>(0);
   const [currentProviderName, setCurrentProviderName] = useState<string>('');
+  const [currentProviderId, setCurrentProviderId] = useState<string>('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -220,6 +221,7 @@ export default function AdminAPIProviders() {
   const fetchServicesFromProvider = async (provider: APIProvider) => {
     setFetchingServices(provider.id);
     setCurrentProviderName(provider.name);
+    setCurrentProviderId(provider.id);
     
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -311,6 +313,7 @@ export default function AdminAPIProviders() {
           max_quantity: s.max,
           category_id: selectedCategory,
           api_service_id: s.service_id,
+          api_provider_id: currentProviderId,
           is_active: true,
         }));
 
