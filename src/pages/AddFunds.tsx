@@ -159,10 +159,14 @@ export default function AddFunds() {
             <div className="glass-card p-6">
               <h3 className="font-display font-semibold mb-4">Pay via UPI</h3>
               
-              <div className="flex items-center justify-center p-6 bg-white rounded-xl mb-4">
+              <div className="flex items-center justify-center p-4 bg-white rounded-xl mb-4">
                 <div className="text-center">
-                  <QrCode className="h-32 w-32 mx-auto text-gray-800" />
-                  <p className="text-xs text-gray-500 mt-2">Scan QR to pay</p>
+                  <img 
+                    src="/images/payment-qr.jpg" 
+                    alt="PhonePe Payment QR Code" 
+                    className="w-64 h-auto mx-auto rounded-lg"
+                  />
+                  <p className="text-xs text-gray-500 mt-2">Scan QR to pay via PhonePe</p>
                 </div>
               </div>
 
