@@ -314,11 +314,19 @@ export default function AdminAPIProviders() {
           is_active: true,
         }));
 
-      const { error } = await supabase
-        .from('services')
-        .insert(servicesToImport);
+      console.log('Importing services:', servicesToImport.length);
 
-      if (error) throw error;
+      const { data, error } = await supabase
+        .from('services')
+        .insert(servicesToImport)
+        .select();
+
+      if (error) {
+        console.error('Import error:', error);
+        throw error;
+      }
+
+      console.log('Imported successfully:', data?.length);
 
       toast({
         title: 'Success',
@@ -331,6 +339,7 @@ export default function AdminAPIProviders() {
       setSelectedCategory('');
       setPriceMarkup(0);
     } catch (error: any) {
+      console.error('Import failed:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to import services',
@@ -606,12 +615,12 @@ export default function AdminAPIProviders() {
               ) : (
                 <>
                   {/* Import Settings */}
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-muted/20 rounded-lg">
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-muted/20 rounded-lg border-2 border-primary/30">
                     <div className="space-y-2">
-                      <Label>Target Category</Label>
+                      <Label className="text-primary font-semibold">Target Category *</Label>
                       <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
+                        <SelectTrigger className={!selectedCategory ? 'border-destructive' : ''}>
+                          <SelectValue placeholder="⚠️ Select category first" />
                         </SelectTrigger>
                         <SelectContent>
                           {categories.map((cat) => (
@@ -621,6 +630,9 @@ export default function AdminAPIProviders() {
                           ))}
                         </SelectContent>
                       </Select>
+                      {!selectedCategory && (
+                        <p className="text-xs text-destructive">Required to import services</p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label>Price Markup (%)</Label>
@@ -696,7 +708,12 @@ export default function AdminAPIProviders() {
             </div>
 
             {fetchedServices.length > 0 && (
-              <div className="border-t border-white/10 pt-4 mt-4">
+              <div className="border-t border-white/10 pt-4 mt-4 space-y-2">
+                {!selectedCategory && selectedServices.size > 0 && (
+                  <p className="text-center text-sm text-destructive">
+                    ⚠️ Please select a target category above before importing
+                  </p>
+                )}
                 <Button
                   className="w-full bg-gradient-to-r from-primary to-secondary"
                   onClick={importSelectedServices}
@@ -707,6 +724,10 @@ export default function AdminAPIProviders() {
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Importing...
                     </>
+                  ) : !selectedCategory ? (
+                    'Select Category to Import'
+                  ) : selectedServices.size === 0 ? (
+                    'Select Services to Import'
                   ) : (
                     <>
                       <Check className="h-4 w-4 mr-2" />
