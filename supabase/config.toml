@@ -1,1 +1,4 @@
 project_id = "vscbltneuicgewulpnmh"
+
+[functions.fetch-provider-services]
+verify_jwt = false

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
   TableBody,
@@ -20,9 +21,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Plus, Pencil, Trash2, Server, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, Server, Eye, EyeOff, RefreshCw, Download, Check } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface APIProvider {
@@ -34,14 +42,39 @@ interface APIProvider {
   created_at: string;
 }
 
+interface FetchedService {
+  service_id: string;
+  name: string;
+  category: string;
+  rate: number;
+  min: number;
+  max: number;
+  type: string;
+  description: string | null;
+}
+
+interface Category {
+  id: string;
+  name: string;
+}
+
 export default function AdminAPIProviders() {
   const [providers, setProviders] = useState<APIProvider[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [fetchDialogOpen, setFetchDialogOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<APIProvider | null>(null);
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [testingProvider, setTestingProvider] = useState<string | null>(null);
+  const [fetchingServices, setFetchingServices] = useState<string | null>(null);
+  const [fetchedServices, setFetchedServices] = useState<FetchedService[]>([]);
+  const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
+  const [importingServices, setImportingServices] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [priceMarkup, setPriceMarkup] = useState<number>(0);
+  const [currentProviderName, setCurrentProviderName] = useState<string>('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -54,6 +87,7 @@ export default function AdminAPIProviders() {
 
   useEffect(() => {
     fetchProviders();
+    fetchCategories();
   }, []);
 
   const fetchProviders = async () => {
@@ -73,6 +107,14 @@ export default function AdminAPIProviders() {
       setProviders(data || []);
     }
     setLoading(false);
+  };
+
+  const fetchCategories = async () => {
+    const { data } = await supabase
+      .from('service_categories')
+      .select('id, name')
+      .order('sort_order');
+    if (data) setCategories(data);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -175,17 +217,128 @@ export default function AdminAPIProviders() {
     }
   };
 
-  const testConnection = async (provider: APIProvider) => {
-    setTestingProvider(provider.id);
+  const fetchServicesFromProvider = async (provider: APIProvider) => {
+    setFetchingServices(provider.id);
+    setCurrentProviderName(provider.name);
     
-    // Simulate API test - in real implementation, you'd make a test request
-    setTimeout(() => {
-      toast({
-        title: 'Connection Test',
-        description: `API provider "${provider.name}" is configured. Test the connection by placing a test order.`,
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await supabase.functions.invoke('fetch-provider-services', {
+        body: { providerId: provider.id },
       });
-      setTestingProvider(null);
-    }, 1500);
+
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to fetch services');
+      }
+
+      const data = response.data;
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      setFetchedServices(data.services || []);
+      setSelectedServices(new Set());
+      setFetchDialogOpen(true);
+      
+      toast({
+        title: 'Services Fetched',
+        description: `Found ${data.services?.length || 0} services from ${provider.name}`,
+      });
+    } catch (error: any) {
+      console.error('Error fetching services:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to fetch services from provider',
+        variant: 'destructive',
+      });
+    } finally {
+      setFetchingServices(null);
+    }
+  };
+
+  const toggleServiceSelection = (serviceId: string) => {
+    const newSelection = new Set(selectedServices);
+    if (newSelection.has(serviceId)) {
+      newSelection.delete(serviceId);
+    } else {
+      newSelection.add(serviceId);
+    }
+    setSelectedServices(newSelection);
+  };
+
+  const selectAllServices = () => {
+    if (selectedServices.size === fetchedServices.length) {
+      setSelectedServices(new Set());
+    } else {
+      setSelectedServices(new Set(fetchedServices.map(s => s.service_id)));
+    }
+  };
+
+  const importSelectedServices = async () => {
+    if (selectedServices.size === 0) {
+      toast({
+        title: 'No services selected',
+        description: 'Please select at least one service to import',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!selectedCategory) {
+      toast({
+        title: 'No category selected',
+        description: 'Please select a category for the imported services',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setImportingServices(true);
+
+    try {
+      const servicesToImport = fetchedServices
+        .filter(s => selectedServices.has(s.service_id))
+        .map(s => ({
+          name: s.name,
+          description: s.description,
+          price_per_1000: s.rate * (1 + priceMarkup / 100),
+          min_quantity: s.min,
+          max_quantity: s.max,
+          category_id: selectedCategory,
+          api_service_id: s.service_id,
+          is_active: true,
+        }));
+
+      const { error } = await supabase
+        .from('services')
+        .insert(servicesToImport);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Success',
+        description: `Imported ${servicesToImport.length} services successfully`,
+      });
+
+      setFetchDialogOpen(false);
+      setFetchedServices([]);
+      setSelectedServices(new Set());
+      setSelectedCategory('');
+      setPriceMarkup(0);
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to import services',
+        variant: 'destructive',
+      });
+    } finally {
+      setImportingServices(false);
+    }
   };
 
   const resetForm = () => {
@@ -206,6 +359,14 @@ export default function AdminAPIProviders() {
     if (key.length <= 8) return '••••••••';
     return key.slice(0, 4) + '••••••••' + key.slice(-4);
   };
+
+  // Group fetched services by category
+  const groupedServices = fetchedServices.reduce((acc, service) => {
+    const category = service.category || 'Uncategorized';
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(service);
+    return acc;
+  }, {} as Record<string, FetchedService[]>);
 
   return (
     <DashboardLayout requireAdmin>
@@ -390,16 +551,17 @@ export default function AdminAPIProviders() {
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => testConnection(provider)}
-                              disabled={testingProvider === provider.id}
+                              variant="outline"
+                              size="sm"
+                              onClick={() => fetchServicesFromProvider(provider)}
+                              disabled={fetchingServices === provider.id}
                             >
-                              {testingProvider === provider.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                              {fetchingServices === provider.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-1" />
                               ) : (
-                                <RefreshCw className="h-4 w-4" />
+                                <Download className="h-4 w-4 mr-1" />
                               )}
+                              Fetch Services
                             </Button>
                             <Button
                               variant="ghost"
@@ -427,6 +589,136 @@ export default function AdminAPIProviders() {
           </CardContent>
         </Card>
 
+        {/* Fetch Services Dialog */}
+        <Dialog open={fetchDialogOpen} onOpenChange={setFetchDialogOpen}>
+          <DialogContent className="glass-card border-white/10 max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="gradient-text">
+                Import Services from {currentProviderName}
+              </DialogTitle>
+            </DialogHeader>
+            
+            <div className="flex-1 overflow-y-auto space-y-4">
+              {fetchedServices.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No services found from this provider</p>
+                </div>
+              ) : (
+                <>
+                  {/* Import Settings */}
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-muted/20 rounded-lg">
+                    <div className="space-y-2">
+                      <Label>Target Category</Label>
+                      <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Price Markup (%)</Label>
+                      <Input
+                        type="number"
+                        value={priceMarkup}
+                        onChange={(e) => setPriceMarkup(Number(e.target.value))}
+                        placeholder="0"
+                        min="0"
+                        max="500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Select All */}
+                  <div className="flex items-center justify-between px-2">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={selectedServices.size === fetchedServices.length}
+                        onCheckedChange={selectAllServices}
+                      />
+                      <span className="text-sm">Select All ({fetchedServices.length} services)</span>
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      {selectedServices.size} selected
+                    </span>
+                  </div>
+
+                  {/* Services by Category */}
+                  <div className="space-y-4">
+                    {Object.entries(groupedServices).map(([category, services]) => (
+                      <div key={category} className="space-y-2">
+                        <h3 className="font-semibold text-sm text-primary">{category}</h3>
+                        <div className="space-y-1">
+                          {services.map((service) => (
+                            <div
+                              key={service.service_id}
+                              className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                                selectedServices.has(service.service_id)
+                                  ? 'bg-primary/10 border-primary/50'
+                                  : 'bg-background/50 border-white/10 hover:border-white/20'
+                              }`}
+                              onClick={() => toggleServiceSelection(service.service_id)}
+                            >
+                              <Checkbox
+                                checked={selectedServices.has(service.service_id)}
+                                onCheckedChange={() => toggleServiceSelection(service.service_id)}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate">{service.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  ID: {service.service_id} | Min: {service.min} | Max: {service.max}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-semibold text-primary">
+                                  ₹{service.rate.toFixed(2)}/1K
+                                </p>
+                                {priceMarkup > 0 && (
+                                  <p className="text-xs text-muted-foreground">
+                                    → ₹{(service.rate * (1 + priceMarkup / 100)).toFixed(2)}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {fetchedServices.length > 0 && (
+              <div className="border-t border-white/10 pt-4 mt-4">
+                <Button
+                  className="w-full bg-gradient-to-r from-primary to-secondary"
+                  onClick={importSelectedServices}
+                  disabled={importingServices || selectedServices.size === 0 || !selectedCategory}
+                >
+                  {importingServices ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Import {selectedServices.size} Services
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {/* Instructions Card */}
         <Card className="glass-card border-white/10">
           <CardHeader>
@@ -438,18 +730,20 @@ export default function AdminAPIProviders() {
               the API URL and API key from your external SMM provider.
             </p>
             <p>
-              <strong className="text-foreground">2. Map Services:</strong> In the
-              Services page, set the "API Service ID" field to match the provider's
-              service ID.
+              <strong className="text-foreground">2. Fetch Services:</strong> Click
+              "Fetch Services" to load available services from the provider.
             </p>
             <p>
-              <strong className="text-foreground">3. Auto-Forward:</strong> When
+              <strong className="text-foreground">3. Import Services:</strong> Select
+              services and category, then import them to your panel.
+            </p>
+            <p>
+              <strong className="text-foreground">4. Auto-Forward:</strong> When
               configured, orders will automatically be forwarded to the provider's
               API.
             </p>
             <p className="text-xs text-muted-foreground/70 mt-4">
-              Note: Make sure to test the connection before enabling auto-forwarding
-              for production orders.
+              Note: Most SMM panels use standard API format (action=services&key=API_KEY).
             </p>
           </CardContent>
         </Card>
