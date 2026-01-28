@@ -69,6 +69,7 @@ export type Database = {
         Row: {
           amount: number
           created_at: string
+          external_order_id: string | null
           id: string
           link: string
           quantity: number
@@ -82,6 +83,7 @@ export type Database = {
         Insert: {
           amount: number
           created_at?: string
+          external_order_id?: string | null
           id?: string
           link: string
           quantity: number
@@ -95,6 +97,7 @@ export type Database = {
         Update: {
           amount?: number
           created_at?: string
+          external_order_id?: string | null
           id?: string
           link?: string
           quantity?: number
@@ -210,6 +213,7 @@ export type Database = {
       }
       services: {
         Row: {
+          api_provider_id: string | null
           api_service_id: string | null
           category_id: string | null
           created_at: string
@@ -223,6 +227,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          api_provider_id?: string | null
           api_service_id?: string | null
           category_id?: string | null
           created_at?: string
@@ -236,6 +241,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          api_provider_id?: string | null
           api_service_id?: string | null
           category_id?: string | null
           created_at?: string
@@ -249,6 +255,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "services_api_provider_id_fkey"
+            columns: ["api_provider_id"]
+            isOneToOne: false
+            referencedRelation: "api_providers"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "services_category_id_fkey"
             columns: ["category_id"]
