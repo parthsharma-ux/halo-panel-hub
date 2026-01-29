@@ -74,6 +74,7 @@ export default function AdminAPIProviders() {
   const [importingServices, setImportingServices] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [priceMarkup, setPriceMarkup] = useState<number>(0);
+  const [currencyMultiplier, setCurrencyMultiplier] = useState<number>(1);
   const [currentProviderName, setCurrentProviderName] = useState<string>('');
   const [currentProviderId, setCurrentProviderId] = useState<string>('');
 
@@ -305,18 +306,21 @@ export default function AdminAPIProviders() {
     try {
       const servicesToImport = fetchedServices
         .filter(s => selectedServices.has(s.service_id))
-        .map(s => ({
-          name: s.name,
-          description: s.description,
-          original_rate: s.rate, // Store the original provider rate
-          price_per_1000: s.rate * (1 + priceMarkup / 100),
-          min_quantity: s.min,
-          max_quantity: s.max,
-          category_id: selectedCategory,
-          api_service_id: s.service_id,
-          api_provider_id: currentProviderId,
-          is_active: true,
-        }));
+        .map(s => {
+          const convertedRate = s.rate * currencyMultiplier;
+          return {
+            name: s.name,
+            description: s.description,
+            original_rate: convertedRate, // Store the converted rate
+            price_per_1000: convertedRate * (1 + priceMarkup / 100),
+            min_quantity: s.min,
+            max_quantity: s.max,
+            category_id: selectedCategory,
+            api_service_id: s.service_id,
+            api_provider_id: currentProviderId,
+            is_active: true,
+          };
+        });
 
       console.log('Importing services:', servicesToImport.length);
 
@@ -342,6 +346,7 @@ export default function AdminAPIProviders() {
       setSelectedServices(new Set());
       setSelectedCategory('');
       setPriceMarkup(0);
+      setCurrencyMultiplier(1);
     } catch (error: any) {
       console.error('Import failed:', error);
       toast({
@@ -619,7 +624,7 @@ export default function AdminAPIProviders() {
               ) : (
                 <>
                   {/* Import Settings */}
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-muted/20 rounded-lg border-2 border-primary/30">
+                  <div className="grid grid-cols-3 gap-4 p-4 bg-muted/20 rounded-lg border-2 border-primary/30">
                     <div className="space-y-2">
                       <Label className="text-primary font-semibold">Target Category *</Label>
                       <Select value={selectedCategory} onValueChange={setSelectedCategory}>
@@ -637,6 +642,18 @@ export default function AdminAPIProviders() {
                       {!selectedCategory && (
                         <p className="text-xs text-destructive">Required to import services</p>
                       )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Currency Multiplier (USD→INR)</Label>
+                      <Input
+                        type="number"
+                        value={currencyMultiplier}
+                        onChange={(e) => setCurrencyMultiplier(Number(e.target.value) || 1)}
+                        placeholder="83"
+                        min="1"
+                        step="0.01"
+                      />
+                      <p className="text-xs text-muted-foreground">Set to ~83 for USD to INR</p>
                     </div>
                     <div className="space-y-2">
                       <Label>Price Markup (%)</Label>
@@ -692,12 +709,15 @@ export default function AdminAPIProviders() {
                                 </p>
                               </div>
                               <div className="text-right">
-                                <p className="text-sm font-semibold text-primary">
-                                  ₹{service.rate.toFixed(2)}/1K
+                                <p className="text-xs text-muted-foreground">
+                                  Original: ${service.rate.toFixed(4)}/1K
                                 </p>
-                                {priceMarkup > 0 && (
-                                  <p className="text-xs text-muted-foreground">
-                                    → ₹{(service.rate * (1 + priceMarkup / 100)).toFixed(2)}
+                                <p className="text-sm font-semibold text-primary">
+                                  ₹{(service.rate * currencyMultiplier).toFixed(2)}/1K
+                                </p>
+                                {(priceMarkup > 0 || currencyMultiplier !== 1) && (
+                                  <p className="text-xs text-green-500">
+                                    Sell: ₹{(service.rate * currencyMultiplier * (1 + priceMarkup / 100)).toFixed(2)}
                                   </p>
                                 )}
                               </div>
