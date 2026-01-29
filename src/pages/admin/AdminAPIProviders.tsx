@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -29,8 +31,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { useDebounce } from '@/hooks/use-debounce';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Plus, Pencil, Trash2, Server, Eye, EyeOff, RefreshCw, Download, Check } from 'lucide-react';
+import { Loader2, Plus, Pencil, Trash2, Server, Eye, EyeOff, Download, Check, Search } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface APIProvider {
@@ -58,6 +61,51 @@ interface Category {
   name: string;
 }
 
+// Memoized service item component
+const ServiceItem = ({ 
+  service, 
+  isSelected, 
+  onToggle, 
+  currencyMultiplier, 
+  priceMarkup 
+}: { 
+  service: FetchedService; 
+  isSelected: boolean; 
+  onToggle: () => void; 
+  currencyMultiplier: number; 
+  priceMarkup: number;
+}) => (
+  <div
+    className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+      isSelected
+        ? 'bg-primary/10 border-primary/50'
+        : 'bg-background/50 border-white/10 hover:border-white/20'
+    }`}
+    onClick={onToggle}
+  >
+    <Checkbox checked={isSelected} onCheckedChange={onToggle} />
+    <div className="flex-1 min-w-0">
+      <p className="text-sm font-medium truncate">{service.name}</p>
+      <p className="text-xs text-muted-foreground">
+        ID: {service.service_id} | Min: {service.min} | Max: {service.max}
+      </p>
+    </div>
+    <div className="text-right flex-shrink-0">
+      <p className="text-xs text-muted-foreground">
+        Original: ${service.rate.toFixed(4)}/1K
+      </p>
+      <p className="text-sm font-semibold text-primary">
+        ₹{(service.rate * currencyMultiplier).toFixed(2)}/1K
+      </p>
+      {(priceMarkup > 0 || currencyMultiplier !== 1) && (
+        <p className="text-xs text-green-500">
+          Sell: ₹{(service.rate * currencyMultiplier * (1 + priceMarkup / 100)).toFixed(2)}
+        </p>
+      )}
+    </div>
+  </div>
+);
+
 export default function AdminAPIProviders() {
   const [providers, setProviders] = useState<APIProvider[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -67,7 +115,6 @@ export default function AdminAPIProviders() {
   const [editingProvider, setEditingProvider] = useState<APIProvider | null>(null);
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
-  const [testingProvider, setTestingProvider] = useState<string | null>(null);
   const [fetchingServices, setFetchingServices] = useState<string | null>(null);
   const [fetchedServices, setFetchedServices] = useState<FetchedService[]>([]);
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
@@ -77,6 +124,10 @@ export default function AdminAPIProviders() {
   const [currencyMultiplier, setCurrencyMultiplier] = useState<number>(1);
   const [currentProviderName, setCurrentProviderName] = useState<string>('');
   const [currentProviderId, setCurrentProviderId] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  const debouncedSearch = useDebounce(searchQuery, 300);
+  const parentRef = useRef<HTMLDivElement>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -246,11 +297,9 @@ export default function AdminAPIProviders() {
 
       setFetchedServices(data.services || []);
       setSelectedServices(new Set());
-      setCurrencyMultiplier(83); // Default to USD→INR conversion
+      setCurrencyMultiplier(83);
+      setSearchQuery('');
       setFetchDialogOpen(true);
-      
-      console.log('Fetched services count:', data.services?.length);
-      console.log('Sample service:', data.services?.[0]);
       
       toast({
         title: 'Services Fetched',
@@ -268,23 +317,43 @@ export default function AdminAPIProviders() {
     }
   };
 
-  const toggleServiceSelection = (serviceId: string) => {
-    const newSelection = new Set(selectedServices);
-    if (newSelection.has(serviceId)) {
-      newSelection.delete(serviceId);
-    } else {
-      newSelection.add(serviceId);
-    }
-    setSelectedServices(newSelection);
-  };
+  const toggleServiceSelection = useCallback((serviceId: string) => {
+    setSelectedServices(prev => {
+      const newSelection = new Set(prev);
+      if (newSelection.has(serviceId)) {
+        newSelection.delete(serviceId);
+      } else {
+        newSelection.add(serviceId);
+      }
+      return newSelection;
+    });
+  }, []);
 
-  const selectAllServices = () => {
-    if (selectedServices.size === fetchedServices.length) {
+  const filteredServices = useMemo(() => {
+    if (!debouncedSearch.trim()) return fetchedServices;
+    const query = debouncedSearch.toLowerCase();
+    return fetchedServices.filter(
+      s => s.name.toLowerCase().includes(query) || 
+           s.category.toLowerCase().includes(query) ||
+           s.service_id.includes(query)
+    );
+  }, [fetchedServices, debouncedSearch]);
+
+  const selectAllFiltered = useCallback(() => {
+    if (selectedServices.size === filteredServices.length && filteredServices.length > 0) {
       setSelectedServices(new Set());
     } else {
-      setSelectedServices(new Set(fetchedServices.map(s => s.service_id)));
+      setSelectedServices(new Set(filteredServices.map(s => s.service_id)));
     }
-  };
+  }, [filteredServices, selectedServices.size]);
+
+  // Virtual list for performance
+  const rowVirtualizer = useVirtualizer({
+    count: filteredServices.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 80,
+    overscan: 10,
+  });
 
   const importSelectedServices = async () => {
     if (selectedServices.size === 0) {
@@ -315,7 +384,7 @@ export default function AdminAPIProviders() {
           return {
             name: s.name,
             description: s.description,
-            original_rate: convertedRate, // Store the converted rate
+            original_rate: convertedRate,
             price_per_1000: convertedRate * (1 + priceMarkup / 100),
             min_quantity: s.min,
             max_quantity: s.max,
@@ -326,19 +395,14 @@ export default function AdminAPIProviders() {
           };
         });
 
-      console.log('Importing services:', servicesToImport.length);
-
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('services')
         .insert(servicesToImport)
         .select();
 
       if (error) {
-        console.error('Import error:', error);
         throw error;
       }
-
-      console.log('Imported successfully:', data?.length);
 
       toast({
         title: 'Success',
@@ -352,7 +416,6 @@ export default function AdminAPIProviders() {
       setPriceMarkup(0);
       setCurrencyMultiplier(1);
     } catch (error: any) {
-      console.error('Import failed:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to import services',
@@ -382,23 +445,15 @@ export default function AdminAPIProviders() {
     return key.slice(0, 4) + '••••••••' + key.slice(-4);
   };
 
-  // Group fetched services by category
-  const groupedServices = fetchedServices.reduce((acc, service) => {
-    const category = service.category || 'Uncategorized';
-    if (!acc[category]) acc[category] = [];
-    acc[category].push(service);
-    return acc;
-  }, {} as Record<string, FetchedService[]>);
-
   return (
     <DashboardLayout requireAdmin>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-display font-bold gradient-text">
+            <h1 className="text-2xl sm:text-3xl font-display font-bold gradient-text">
               API Providers
             </h1>
-            <p className="text-muted-foreground mt-1">
+            <p className="text-muted-foreground mt-1 text-sm sm:text-base">
               Connect external SMM providers to auto-forward orders
             </p>
           </div>
@@ -408,16 +463,19 @@ export default function AdminAPIProviders() {
             if (!open) resetForm();
           }}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-primary to-secondary">
+              <Button className="bg-gradient-to-r from-primary to-secondary w-full sm:w-auto">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Provider
               </Button>
             </DialogTrigger>
-            <DialogContent className="glass-card border-white/10">
+            <DialogContent className="glass-card border-white/10 max-w-md">
               <DialogHeader>
                 <DialogTitle className="gradient-text">
                   {editingProvider ? 'Edit API Provider' : 'Add API Provider'}
                 </DialogTitle>
+                <DialogDescription>
+                  Configure your external SMM provider API connection.
+                </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
@@ -517,15 +575,15 @@ export default function AdminAPIProviders() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
                 <Table>
                   <TableHeader>
                     <TableRow className="border-white/10">
                       <TableHead>Provider</TableHead>
-                      <TableHead>API URL</TableHead>
-                      <TableHead>API Key</TableHead>
+                      <TableHead className="hidden md:table-cell">API URL</TableHead>
+                      <TableHead className="hidden lg:table-cell">API Key</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Created</TableHead>
+                      <TableHead className="hidden sm:table-cell">Created</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -535,12 +593,12 @@ export default function AdminAPIProviders() {
                         <TableCell className="font-medium">
                           {provider.name}
                         </TableCell>
-                        <TableCell>
-                          <code className="text-xs bg-background/50 px-2 py-1 rounded">
+                        <TableCell className="hidden md:table-cell">
+                          <code className="text-xs bg-background/50 px-2 py-1 rounded truncate max-w-[200px] block">
                             {provider.api_url}
                           </code>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden lg:table-cell">
                           <div className="flex items-center gap-2">
                             <code className="text-xs bg-background/50 px-2 py-1 rounded">
                               {showApiKey[provider.id]
@@ -567,35 +625,39 @@ export default function AdminAPIProviders() {
                             onCheckedChange={() => toggleProviderStatus(provider)}
                           />
                         </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
+                        <TableCell className="hidden sm:table-cell text-muted-foreground text-sm">
                           {format(new Date(provider.created_at), 'MMM d, yyyy')}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex justify-end gap-1 sm:gap-2">
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => fetchServicesFromProvider(provider)}
                               disabled={fetchingServices === provider.id}
+                              className="text-xs sm:text-sm"
                             >
                               {fetchingServices === provider.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                                <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
-                                <Download className="h-4 w-4 mr-1" />
+                                <>
+                                  <Download className="h-4 w-4 sm:mr-1" />
+                                  <span className="hidden sm:inline">Fetch</span>
+                                </>
                               )}
-                              Fetch Services
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
                               onClick={() => handleEdit(provider)}
+                              className="h-8 w-8"
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="text-destructive hover:text-destructive"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
                               onClick={() => handleDelete(provider.id)}
                             >
                               <Trash2 className="h-4 w-4" />
@@ -611,16 +673,21 @@ export default function AdminAPIProviders() {
           </CardContent>
         </Card>
 
-        {/* Fetch Services Dialog */}
+        {/* Fetch Services Dialog - Optimized with Virtual List */}
         <Dialog open={fetchDialogOpen} onOpenChange={setFetchDialogOpen}>
-          <DialogContent className="glass-card border-white/10 max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogContent className="glass-card border-white/10 max-w-4xl max-h-[90vh] sm:max-h-[80vh] overflow-hidden flex flex-col p-4 sm:p-6">
             <DialogHeader>
-              <DialogTitle className="gradient-text">
+              <DialogTitle className="gradient-text text-lg sm:text-xl">
                 Import Services from {currentProviderName}
               </DialogTitle>
+              <DialogDescription>
+                {fetchedServices.length > 0 && (
+                  <span>Found {fetchedServices.length.toLocaleString()} services</span>
+                )}
+              </DialogDescription>
             </DialogHeader>
             
-            <div className="flex-1 overflow-y-auto space-y-4">
+            <div className="flex-1 overflow-hidden flex flex-col space-y-4">
               {fetchedServices.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <p>No services found from this provider</p>
@@ -628,14 +695,14 @@ export default function AdminAPIProviders() {
               ) : (
                 <>
                   {/* Import Settings */}
-                  <div className="grid grid-cols-3 gap-4 p-4 bg-muted/20 rounded-lg border-2 border-primary/30">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 p-3 sm:p-4 bg-muted/20 rounded-lg border-2 border-primary/30">
                     <div className="space-y-2">
-                      <Label className="text-primary font-semibold">Target Category *</Label>
+                      <Label className="text-primary font-semibold text-sm">Target Category *</Label>
                       <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                         <SelectTrigger className={!selectedCategory ? 'border-destructive' : ''}>
-                          <SelectValue placeholder="⚠️ Select category first" />
+                          <SelectValue placeholder="Select category" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="bg-background border-border">
                           {categories.map((cat) => (
                             <SelectItem key={cat.id} value={cat.id}>
                               {cat.name}
@@ -643,12 +710,9 @@ export default function AdminAPIProviders() {
                           ))}
                         </SelectContent>
                       </Select>
-                      {!selectedCategory && (
-                        <p className="text-xs text-destructive">Required to import services</p>
-                      )}
                     </div>
                     <div className="space-y-2">
-                      <Label>Currency Multiplier (USD→INR)</Label>
+                      <Label className="text-sm">Currency Multiplier (USD→INR)</Label>
                       <Input
                         type="number"
                         value={currencyMultiplier}
@@ -657,10 +721,9 @@ export default function AdminAPIProviders() {
                         min="1"
                         step="0.01"
                       />
-                      <p className="text-xs text-muted-foreground">Set to ~83 for USD to INR</p>
                     </div>
                     <div className="space-y-2">
-                      <Label>Price Markup (%)</Label>
+                      <Label className="text-sm">Price Markup (%)</Label>
                       <Input
                         type="number"
                         value={priceMarkup}
@@ -672,64 +735,70 @@ export default function AdminAPIProviders() {
                     </div>
                   </div>
 
-                  {/* Select All */}
-                  <div className="flex items-center justify-between px-2">
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        checked={selectedServices.size === fetchedServices.length}
-                        onCheckedChange={selectAllServices}
+                  {/* Search and Select All */}
+                  <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+                    <div className="relative flex-1 max-w-sm">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search services..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9"
                       />
-                      <span className="text-sm">Select All ({fetchedServices.length} services)</span>
                     </div>
-                    <span className="text-sm text-muted-foreground">
-                      {selectedServices.size} selected
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={selectedServices.size === filteredServices.length && filteredServices.length > 0}
+                          onCheckedChange={selectAllFiltered}
+                        />
+                        <span className="text-sm">Select All</span>
+                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        {selectedServices.size.toLocaleString()} / {filteredServices.length.toLocaleString()}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Services by Category */}
-                  <div className="space-y-4">
-                    {Object.entries(groupedServices).map(([category, services]) => (
-                      <div key={category} className="space-y-2">
-                        <h3 className="font-semibold text-sm text-primary">{category}</h3>
-                        <div className="space-y-1">
-                          {services.map((service) => (
-                            <div
-                              key={service.service_id}
-                              className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
-                                selectedServices.has(service.service_id)
-                                  ? 'bg-primary/10 border-primary/50'
-                                  : 'bg-background/50 border-white/10 hover:border-white/20'
-                              }`}
-                              onClick={() => toggleServiceSelection(service.service_id)}
-                            >
-                              <Checkbox
-                                checked={selectedServices.has(service.service_id)}
-                                onCheckedChange={() => toggleServiceSelection(service.service_id)}
-                              />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium truncate">{service.name}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  ID: {service.service_id} | Min: {service.min} | Max: {service.max}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-xs text-muted-foreground">
-                                  Original: ${service.rate.toFixed(4)}/1K
-                                </p>
-                                <p className="text-sm font-semibold text-primary">
-                                  ₹{(service.rate * currencyMultiplier).toFixed(2)}/1K
-                                </p>
-                                {(priceMarkup > 0 || currencyMultiplier !== 1) && (
-                                  <p className="text-xs text-green-500">
-                                    Sell: ₹{(service.rate * currencyMultiplier * (1 + priceMarkup / 100)).toFixed(2)}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                  {/* Virtualized Service List */}
+                  <div 
+                    ref={parentRef} 
+                    className="flex-1 overflow-auto rounded-lg border border-white/10 min-h-[200px]"
+                    style={{ contain: 'strict' }}
+                  >
+                    <div
+                      style={{
+                        height: `${rowVirtualizer.getTotalSize()}px`,
+                        width: '100%',
+                        position: 'relative',
+                      }}
+                    >
+                      {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+                        const service = filteredServices[virtualItem.index];
+                        return (
+                          <div
+                            key={service.service_id}
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              width: '100%',
+                              height: `${virtualItem.size}px`,
+                              transform: `translateY(${virtualItem.start}px)`,
+                              padding: '4px 8px',
+                            }}
+                          >
+                            <ServiceItem
+                              service={service}
+                              isSelected={selectedServices.has(service.service_id)}
+                              onToggle={() => toggleServiceSelection(service.service_id)}
+                              currencyMultiplier={currencyMultiplier}
+                              priceMarkup={priceMarkup}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </>
               )}
@@ -759,7 +828,7 @@ export default function AdminAPIProviders() {
                   ) : (
                     <>
                       <Check className="h-4 w-4 mr-2" />
-                      Import {selectedServices.size} Services
+                      Import {selectedServices.size.toLocaleString()} Services
                     </>
                   )}
                 </Button>
@@ -790,9 +859,6 @@ export default function AdminAPIProviders() {
               <strong className="text-foreground">4. Auto-Forward:</strong> When
               configured, orders will automatically be forwarded to the provider's
               API.
-            </p>
-            <p className="text-xs text-muted-foreground/70 mt-4">
-              Note: Most SMM panels use standard API format (action=services&key=API_KEY).
             </p>
           </CardContent>
         </Card>
