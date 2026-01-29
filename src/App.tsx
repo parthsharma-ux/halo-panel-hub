@@ -29,6 +29,7 @@ import AdminPayments from "./pages/admin/AdminPayments";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminSettings from "./pages/admin/AdminSettings";
 import AdminTickets from "./pages/admin/AdminTickets";
+import AdminAnnouncements from "./pages/admin/AdminAnnouncements";
 
 const queryClient = new QueryClient();
 
@@ -64,6 +65,7 @@ const App = () => (
               <Route path="/admin/settings" element={<AdminSettings />} />
               <Route path="/admin/api" element={<AdminAPIProviders />} />
               <Route path="/admin/tickets" element={<AdminTickets />} />
+              <Route path="/admin/announcements" element={<AdminAnnouncements />} />
               
               <Route path="*" element={<NotFound />} />
             </Routes>
