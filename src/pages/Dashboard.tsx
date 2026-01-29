@@ -13,9 +13,11 @@ import {
   ShoppingCart,
   AlertCircle,
   Send,
+  ArrowRight,
+  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 
 interface Order {
@@ -36,9 +38,23 @@ interface Announcement {
   content: string;
 }
 
+interface Service {
+  id: string;
+  name: string;
+  price_per_1000: number;
+  min_quantity: number;
+  max_quantity: number;
+  category_id: string | null;
+  service_categories: {
+    name: string;
+  } | null;
+}
+
 export default function Dashboard() {
   const { profile, user } = useAuth();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [popularServices, setPopularServices] = useState<Service[]>([]);
   const [stats, setStats] = useState({
     total: 0,
     completed: 0,
@@ -89,11 +105,28 @@ export default function Dashboard() {
         .maybeSingle();
 
       setAnnouncement(announcementData);
+
+      // Fetch popular services (first 6 active services)
+      const { data: servicesData } = await supabase
+        .from('services')
+        .select('id, name, price_per_1000, min_quantity, max_quantity, category_id, service_categories(name)')
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+        .limit(6);
+
+      if (servicesData) {
+        setPopularServices(servicesData);
+      }
+
       setLoading(false);
     };
 
     fetchData();
   }, [user]);
+
+  const handleQuickOrder = (serviceId: string) => {
+    navigate(`/order?service=${serviceId}`);
+  };
 
   return (
     <DashboardLayout>
@@ -176,6 +209,68 @@ export default function Dashboard() {
             icon={Clock}
             variant="warning"
           />
+        </div>
+
+        {/* Quick Order Services */}
+        <div className="glass-card overflow-hidden">
+          <div className="p-6 border-b border-border">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-display font-semibold">Quick Order</h2>
+              </div>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/services" className="gap-1">
+                  View All Services
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              Select a service to place an order quickly
+            </p>
+          </div>
+          
+          <div className="p-6">
+            {popularServices.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No services available yet.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {popularServices.map((service) => (
+                  <div 
+                    key={service.id}
+                    className="group p-4 rounded-xl border border-border bg-card/50 hover:border-primary/50 hover:bg-card transition-all duration-200 cursor-pointer"
+                    onClick={() => handleQuickOrder(service.id)}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary">
+                        {service.service_categories?.name || 'General'}
+                      </span>
+                      <span className="text-sm font-bold text-primary">
+                        ₹{Number(service.price_per_1000).toFixed(2)}
+                      </span>
+                    </div>
+                    <h3 className="font-medium text-sm line-clamp-2 mb-2 group-hover:text-primary transition-colors">
+                      {service.name}
+                    </h3>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Min: {service.min_quantity.toLocaleString()}</span>
+                      <span>Max: {service.max_quantity.toLocaleString()}</span>
+                    </div>
+                    <Button 
+                      size="sm" 
+                      className="w-full mt-3 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <ShoppingCart className="h-4 w-4 mr-1" />
+                      Order Now
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Recent Orders */}
