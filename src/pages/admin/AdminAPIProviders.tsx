@@ -308,6 +308,7 @@ export default function AdminAPIProviders() {
         .map(s => ({
           name: s.name,
           description: s.description,
+          original_rate: s.rate, // Store the original provider rate
           price_per_1000: s.rate * (1 + priceMarkup / 100),
           min_quantity: s.min,
           max_quantity: s.max,

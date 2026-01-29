@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Select,
   SelectContent,
@@ -21,18 +22,20 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, Pencil, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Loader2, Trash2 } from 'lucide-react';
 
 interface Service {
   id: string;
   name: string;
   description: string | null;
   price_per_1000: number;
+  original_rate: number | null;
   min_quantity: number;
   max_quantity: number;
   is_active: boolean;
   category_id: string | null;
   api_service_id: string | null;
+  api_provider_id: string | null;
 }
 
 interface Category {
@@ -46,13 +49,16 @@ export default function AdminServices() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
+  const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
   
   const [form, setForm] = useState({
     name: '',
     description: '',
     price_per_1000: '',
+    original_rate: '',
     min_quantity: '100',
     max_quantity: '10000',
     category_id: '',
@@ -82,6 +88,7 @@ export default function AdminServices() {
         name: service.name,
         description: service.description || '',
         price_per_1000: service.price_per_1000.toString(),
+        original_rate: service.original_rate?.toString() || '',
         min_quantity: service.min_quantity.toString(),
         max_quantity: service.max_quantity.toString(),
         category_id: service.category_id || '',
@@ -94,6 +101,7 @@ export default function AdminServices() {
         name: '',
         description: '',
         price_per_1000: '',
+        original_rate: '',
         min_quantity: '100',
         max_quantity: '10000',
         category_id: '',
@@ -112,6 +120,7 @@ export default function AdminServices() {
       name: form.name,
       description: form.description || null,
       price_per_1000: Number(form.price_per_1000),
+      original_rate: form.original_rate ? Number(form.original_rate) : null,
       min_quantity: Number(form.min_quantity),
       max_quantity: Number(form.max_quantity),
       category_id: form.category_id || null,
@@ -172,6 +181,53 @@ export default function AdminServices() {
     }
   };
 
+  const toggleSelectService = (serviceId: string) => {
+    const newSelected = new Set(selectedServices);
+    if (newSelected.has(serviceId)) {
+      newSelected.delete(serviceId);
+    } else {
+      newSelected.add(serviceId);
+    }
+    setSelectedServices(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedServices.size === services.length) {
+      setSelectedServices(new Set());
+    } else {
+      setSelectedServices(new Set(services.map(s => s.id)));
+    }
+  };
+
+  const deleteSelectedServices = async () => {
+    if (selectedServices.size === 0) return;
+    
+    const confirmed = window.confirm(`Are you sure you want to delete ${selectedServices.size} service(s)? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from('services')
+        .delete()
+        .in('id', Array.from(selectedServices));
+
+      if (error) throw error;
+
+      setServices(services.filter(s => !selectedServices.has(s.id)));
+      setSelectedServices(new Set());
+      toast({ title: `${selectedServices.size} service(s) deleted successfully` });
+    } catch (error: any) {
+      toast({
+        title: 'Error deleting services',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const getCategoryName = (categoryId: string | null) => {
     return categories.find(c => c.id === categoryId)?.name || 'Uncategorized';
   };
@@ -179,109 +235,137 @@ export default function AdminServices() {
   return (
     <DashboardLayout requireAdmin>
       <div className="space-y-8 animate-fade-in">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-3xl font-display font-bold">Services</h1>
             <p className="text-muted-foreground mt-1">Manage your SMM services.</p>
           </div>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
+          <div className="flex items-center gap-2">
+            {selectedServices.size > 0 && (
               <Button 
-                onClick={() => openDialog()}
-                className="bg-gradient-to-r from-primary to-secondary"
+                variant="destructive"
+                onClick={deleteSelectedServices}
+                disabled={deleting}
               >
-                <Plus className="mr-2 h-4 w-4" />
-                Add Service
+                {deleting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-4 w-4" />
+                )}
+                Delete ({selectedServices.size})
               </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingService ? 'Edit Service' : 'Add New Service'}
-                </DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <Label>Name</Label>
-                  <Input
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    required
-                  />
-                </div>
-                <div>
-                  <Label>Category</Label>
-                  <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Description</Label>
-                  <Textarea
-                    value={form.description}
-                    onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    rows={2}
-                  />
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label>Price/1K</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={form.price_per_1000}
-                      onChange={(e) => setForm({ ...form, price_per_1000: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label>Min</Label>
-                    <Input
-                      type="number"
-                      value={form.min_quantity}
-                      onChange={(e) => setForm({ ...form, min_quantity: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label>Max</Label>
-                    <Input
-                      type="number"
-                      value={form.max_quantity}
-                      onChange={(e) => setForm({ ...form, max_quantity: e.target.value })}
-                      required
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label>API Service ID (Optional)</Label>
-                  <Input
-                    value={form.api_service_id}
-                    onChange={(e) => setForm({ ...form, api_service_id: e.target.value })}
-                    placeholder="External provider service ID"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={form.is_active}
-                    onCheckedChange={(v) => setForm({ ...form, is_active: v })}
-                  />
-                  <Label>Active</Label>
-                </div>
-                <Button type="submit" className="w-full" disabled={saving}>
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  {editingService ? 'Update Service' : 'Create Service'}
+            )}
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button 
+                  onClick={() => openDialog()}
+                  className="bg-gradient-to-r from-primary to-secondary"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Service
                 </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingService ? 'Edit Service' : 'Add New Service'}
+                  </DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <Label>Name</Label>
+                    <Input
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label>Category</Label>
+                    <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Description</Label>
+                    <Textarea
+                      value={form.description}
+                      onChange={(e) => setForm({ ...form, description: e.target.value })}
+                      rows={2}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Original Rate/1K (Provider)</Label>
+                      <Input
+                        type="number"
+                        step="0.0001"
+                        value={form.original_rate}
+                        onChange={(e) => setForm({ ...form, original_rate: e.target.value })}
+                        placeholder="From provider"
+                      />
+                    </div>
+                    <div>
+                      <Label>Selling Price/1K</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={form.price_per_1000}
+                        onChange={(e) => setForm({ ...form, price_per_1000: e.target.value })}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Min Quantity</Label>
+                      <Input
+                        type="number"
+                        value={form.min_quantity}
+                        onChange={(e) => setForm({ ...form, min_quantity: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label>Max Quantity</Label>
+                      <Input
+                        type="number"
+                        value={form.max_quantity}
+                        onChange={(e) => setForm({ ...form, max_quantity: e.target.value })}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>API Service ID (Optional)</Label>
+                    <Input
+                      value={form.api_service_id}
+                      onChange={(e) => setForm({ ...form, api_service_id: e.target.value })}
+                      placeholder="External provider service ID"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={form.is_active}
+                      onCheckedChange={(v) => setForm({ ...form, is_active: v })}
+                    />
+                    <Label>Active</Label>
+                  </div>
+                  <Button type="submit" className="w-full" disabled={saving}>
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {editingService ? 'Update Service' : 'Create Service'}
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
         {/* Services Table */}
@@ -290,9 +374,16 @@ export default function AdminServices() {
             <table className="data-table">
               <thead>
                 <tr>
+                  <th className="w-12">
+                    <Checkbox
+                      checked={services.length > 0 && selectedServices.size === services.length}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </th>
                   <th>Name</th>
                   <th>Category</th>
-                  <th>Price/1K</th>
+                  <th>Original Rate</th>
+                  <th>Selling Price</th>
                   <th>Min</th>
                   <th>Max</th>
                   <th>Active</th>
@@ -302,19 +393,25 @@ export default function AdminServices() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-12 text-muted-foreground">
+                    <td colSpan={9} className="text-center py-12 text-muted-foreground">
                       Loading...
                     </td>
                   </tr>
                 ) : services.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-12 text-muted-foreground">
+                    <td colSpan={9} className="text-center py-12 text-muted-foreground">
                       No services yet. Add your first service.
                     </td>
                   </tr>
                 ) : (
                   services.map((service) => (
                     <tr key={service.id}>
+                      <td>
+                        <Checkbox
+                          checked={selectedServices.has(service.id)}
+                          onCheckedChange={() => toggleSelectService(service.id)}
+                        />
+                      </td>
                       <td>
                         <div>
                           <p className="font-medium">{service.name}</p>
@@ -326,6 +423,12 @@ export default function AdminServices() {
                         </div>
                       </td>
                       <td className="text-sm">{getCategoryName(service.category_id)}</td>
+                      <td className="text-sm text-muted-foreground">
+                        {service.original_rate !== null 
+                          ? `₹${Number(service.original_rate).toFixed(4)}` 
+                          : '-'
+                        }
+                      </td>
                       <td className="font-semibold text-primary">
                         ₹{Number(service.price_per_1000).toFixed(2)}
                       </td>

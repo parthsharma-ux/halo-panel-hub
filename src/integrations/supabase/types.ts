@@ -223,6 +223,7 @@ export type Database = {
           max_quantity: number
           min_quantity: number
           name: string
+          original_rate: number | null
           price_per_1000: number
           updated_at: string
         }
@@ -237,6 +238,7 @@ export type Database = {
           max_quantity?: number
           min_quantity?: number
           name: string
+          original_rate?: number | null
           price_per_1000: number
           updated_at?: string
         }
@@ -251,6 +253,7 @@ export type Database = {
           max_quantity?: number
           min_quantity?: number
           name?: string
+          original_rate?: number | null
           price_per_1000?: number
           updated_at?: string
         }
