@@ -22,7 +22,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, Pencil, Loader2, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Loader2, Trash2, RefreshCw } from 'lucide-react';
 
 interface Service {
   id: string;
@@ -43,13 +43,20 @@ interface Category {
   name: string;
 }
 
+interface APIProvider {
+  id: string;
+  name: string;
+}
+
 export default function AdminServices() {
   const { toast } = useToast();
   const [services, setServices] = useState<Service[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [providers, setProviders] = useState<APIProvider[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
@@ -71,14 +78,90 @@ export default function AdminServices() {
   }, []);
 
   const fetchData = async () => {
-    const [servicesRes, categoriesRes] = await Promise.all([
+    const [servicesRes, categoriesRes, providersRes] = await Promise.all([
       supabase.from('services').select('*').order('created_at', { ascending: false }),
       supabase.from('service_categories').select('*').order('sort_order'),
+      supabase.from('api_providers').select('id, name').eq('is_active', true),
     ]);
     
     if (servicesRes.data) setServices(servicesRes.data);
     if (categoriesRes.data) setCategories(categoriesRes.data);
+    if (providersRes.data) setProviders(providersRes.data);
     setLoading(false);
+  };
+
+  const syncRatesFromProviders = async () => {
+    // Get services that have provider info
+    const servicesWithProviders = services.filter(s => s.api_provider_id && s.api_service_id);
+    
+    if (servicesWithProviders.length === 0) {
+      toast({
+        title: 'No services to sync',
+        description: 'No services are linked to external providers',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSyncing(true);
+    let updatedCount = 0;
+    const providerIds = [...new Set(servicesWithProviders.map(s => s.api_provider_id))];
+
+    try {
+      for (const providerId of providerIds) {
+        // Fetch services from provider
+        const response = await supabase.functions.invoke('fetch-provider-services', {
+          body: { providerId },
+        });
+
+        if (response.error || response.data?.error) {
+          console.error(`Failed to fetch from provider ${providerId}:`, response.error || response.data?.error);
+          continue;
+        }
+
+        const providerServices = response.data?.services || [];
+        
+        // Create a map of service_id to rate
+        const rateMap = new Map<string, number>();
+        providerServices.forEach((ps: { service_id: string; rate: number }) => {
+          rateMap.set(ps.service_id, ps.rate);
+        });
+
+        // Update local services that match this provider
+        for (const service of servicesWithProviders.filter(s => s.api_provider_id === providerId)) {
+          const newRate = rateMap.get(service.api_service_id!);
+          
+          if (newRate !== undefined && newRate !== service.original_rate) {
+            const { error } = await supabase
+              .from('services')
+              .update({ original_rate: newRate })
+              .eq('id', service.id);
+
+            if (!error) {
+              updatedCount++;
+              // Update local state
+              setServices(prev => prev.map(s => 
+                s.id === service.id ? { ...s, original_rate: newRate } : s
+              ));
+            }
+          }
+        }
+      }
+
+      toast({
+        title: 'Sync Complete',
+        description: `Updated rates for ${updatedCount} service(s)`,
+      });
+    } catch (error: any) {
+      console.error('Sync error:', error);
+      toast({
+        title: 'Sync Error',
+        description: error.message || 'Failed to sync rates',
+        variant: 'destructive',
+      });
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const openDialog = (service?: Service) => {
@@ -240,7 +323,19 @@ export default function AdminServices() {
             <h1 className="text-3xl font-display font-bold">Services</h1>
             <p className="text-muted-foreground mt-1">Manage your SMM services.</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button 
+              variant="outline"
+              onClick={syncRatesFromProviders}
+              disabled={syncing}
+            >
+              {syncing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Sync Rates
+            </Button>
             {selectedServices.size > 0 && (
               <Button 
                 variant="destructive"
