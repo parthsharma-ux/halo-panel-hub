@@ -479,6 +479,7 @@ export default function AdminServices() {
                   <th>Category</th>
                   <th>Original Rate</th>
                   <th>Selling Price</th>
+                  <th>Margin</th>
                   <th>Min</th>
                   <th>Max</th>
                   <th>Active</th>
@@ -488,13 +489,13 @@ export default function AdminServices() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-12 text-muted-foreground">
+                    <td colSpan={10} className="text-center py-12 text-muted-foreground">
                       Loading...
                     </td>
                   </tr>
                 ) : services.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-12 text-muted-foreground">
+                    <td colSpan={10} className="text-center py-12 text-muted-foreground">
                       No services yet. Add your first service.
                     </td>
                   </tr>
@@ -526,6 +527,18 @@ export default function AdminServices() {
                       </td>
                       <td className="font-semibold text-primary">
                         ₹{Number(service.price_per_1000).toFixed(2)}
+                      </td>
+                      <td className={`font-medium ${
+                        service.original_rate !== null && service.price_per_1000 > service.original_rate
+                          ? 'text-green-500'
+                          : service.original_rate !== null && service.price_per_1000 < service.original_rate
+                          ? 'text-red-500'
+                          : 'text-muted-foreground'
+                      }`}>
+                        {service.original_rate !== null 
+                          ? `₹${(Number(service.price_per_1000) - Number(service.original_rate)).toFixed(2)}`
+                          : '-'
+                        }
                       </td>
                       <td>{service.min_quantity.toLocaleString()}</td>
                       <td>{service.max_quantity.toLocaleString()}</td>
