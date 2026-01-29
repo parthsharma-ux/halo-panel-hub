@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
-import { Search, Filter, Instagram, Send, Youtube, Twitter, Facebook, Music } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Search, Filter, Instagram, Send, Youtube, Twitter, Facebook, Music, ShoppingCart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Service {
@@ -31,11 +33,16 @@ const iconMap: Record<string, any> = {
 };
 
 export default function Services() {
+  const navigate = useNavigate();
   const [services, setServices] = useState<Service[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+
+  const handleQuickOrder = (serviceId: string) => {
+    navigate(`/order?service=${serviceId}`);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -163,15 +170,25 @@ export default function Services() {
                               {service.description}
                             </p>
                           )}
-                          <div className="flex items-center gap-4 text-xs pt-2 border-t border-border">
-                            <div className="flex items-center gap-1">
-                              <span className="text-muted-foreground">Min:</span>
-                              <span className="font-medium">{service.min_quantity.toLocaleString()}</span>
+                          <div className="flex items-center justify-between gap-4 text-xs pt-3 border-t border-border">
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-1">
+                                <span className="text-muted-foreground">Min:</span>
+                                <span className="font-medium">{service.min_quantity.toLocaleString()}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-muted-foreground">Max:</span>
+                                <span className="font-medium">{service.max_quantity.toLocaleString()}</span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-muted-foreground">Max:</span>
-                              <span className="font-medium">{service.max_quantity.toLocaleString()}</span>
-                            </div>
+                            <Button 
+                              size="sm" 
+                              onClick={() => handleQuickOrder(service.id)}
+                              className="bg-gradient-to-r from-primary to-secondary text-xs h-8"
+                            >
+                              <ShoppingCart className="h-3 w-3 mr-1" />
+                              Order
+                            </Button>
                           </div>
                         </div>
                       ))}
