@@ -143,7 +143,42 @@ export default function Services() {
                       {category.name}
                     </h2>
                     
-                    <div className="glass-card overflow-hidden">
+                    {/* Mobile Card Layout */}
+                    <div className="block md:hidden space-y-3">
+                      {categoryServices.map((service) => (
+                        <div key={service.id} className="glass-card p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm leading-tight">{service.name}</p>
+                              <p className="font-mono text-xs text-muted-foreground mt-1">
+                                ID: {service.id.slice(0, 6)}
+                              </p>
+                            </div>
+                            <span className="font-bold text-primary text-lg whitespace-nowrap">
+                              ₹{Number(service.price_per_1000).toFixed(2)}
+                            </span>
+                          </div>
+                          {service.description && (
+                            <p className="text-xs text-muted-foreground line-clamp-3">
+                              {service.description}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-4 text-xs pt-2 border-t border-border">
+                            <div className="flex items-center gap-1">
+                              <span className="text-muted-foreground">Min:</span>
+                              <span className="font-medium">{service.min_quantity.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-muted-foreground">Max:</span>
+                              <span className="font-medium">{service.max_quantity.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Desktop Table Layout */}
+                    <div className="hidden md:block glass-card overflow-hidden">
                       <table className="data-table">
                         <thead>
                           <tr>
@@ -164,17 +199,17 @@ export default function Services() {
                                 <div>
                                   <p className="font-medium">{service.name}</p>
                                   {service.description && (
-                                    <p className="text-xs text-muted-foreground mt-1">
+                                    <p className="text-xs text-muted-foreground mt-1 max-w-md">
                                       {service.description}
                                     </p>
                                   )}
                                 </div>
                               </td>
-                              <td className="font-semibold text-primary">
+                              <td className="font-semibold text-primary whitespace-nowrap">
                                 ₹{Number(service.price_per_1000).toFixed(2)}
                               </td>
-                              <td>{service.min_quantity.toLocaleString()}</td>
-                              <td>{service.max_quantity.toLocaleString()}</td>
+                              <td className="whitespace-nowrap">{service.min_quantity.toLocaleString()}</td>
+                              <td className="whitespace-nowrap">{service.max_quantity.toLocaleString()}</td>
                             </tr>
                           ))}
                         </tbody>
