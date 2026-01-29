@@ -246,7 +246,11 @@ export default function AdminAPIProviders() {
 
       setFetchedServices(data.services || []);
       setSelectedServices(new Set());
+      setCurrencyMultiplier(83); // Default to USD→INR conversion
       setFetchDialogOpen(true);
+      
+      console.log('Fetched services count:', data.services?.length);
+      console.log('Sample service:', data.services?.[0]);
       
       toast({
         title: 'Services Fetched',
