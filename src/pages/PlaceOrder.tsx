@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
@@ -40,6 +41,7 @@ const orderSchema = z.object({
 export default function PlaceOrder() {
   const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   
   const [categories, setCategories] = useState<Category[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -66,12 +68,27 @@ export default function PlaceOrder() {
       ]);
 
       if (categoriesRes.data) setCategories(categoriesRes.data);
-      if (servicesRes.data) setServices(servicesRes.data);
+      if (servicesRes.data) {
+        setServices(servicesRes.data);
+        
+        // Auto-select service from URL parameter
+        const serviceIdFromUrl = searchParams.get('service');
+        if (serviceIdFromUrl) {
+          const matchedService = servicesRes.data.find(s => s.id === serviceIdFromUrl);
+          if (matchedService) {
+            setSelectedService(serviceIdFromUrl);
+            // Also set the category for better context
+            if (matchedService.category_id) {
+              setSelectedCategory(matchedService.category_id);
+            }
+          }
+        }
+      }
       setLoading(false);
     };
 
     fetchData();
-  }, []);
+  }, [searchParams]);
 
   const filteredServices = services.filter(s => 
     !selectedCategory || s.category_id === selectedCategory
@@ -241,13 +258,16 @@ export default function PlaceOrder() {
             <div className="space-y-2">
               <Label>Service *</Label>
               <Select value={selectedService} onValueChange={setSelectedService}>
-                <SelectTrigger className="bg-background/50">
+                <SelectTrigger className="bg-background/50 h-auto min-h-10 py-2">
                   <SelectValue placeholder="Select a service" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-w-[calc(100vw-2rem)] md:max-w-none">
                   {filteredServices.map((service) => (
                     <SelectItem key={service.id} value={service.id}>
-                      {service.name} - ₹{Number(service.price_per_1000).toFixed(2)}/1K
+                      <div className="flex flex-col items-start gap-0.5">
+                        <span className="font-medium">{service.name}</span>
+                        <span className="text-xs text-primary">₹{Number(service.price_per_1000).toFixed(2)}/1K</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
